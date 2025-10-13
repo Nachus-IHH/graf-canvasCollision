@@ -1,131 +1,150 @@
-// Declaración de variables
+// === CONFIGURACIÓN DEL CANVAS ===
 const canvas = document.getElementById("gameCanvas");
-let ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d");
 
-// Obtiene las dimensiones de la pantalla actual
-const window_height = window.innerHeight;
-const window_width = window.innerWidth;
-canvas.height = window_height;
-canvas.width = window_width;
-canvas.style.background = "#ff8";
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+canvas.style.background = "#e9e4b0";
 
-// Clase Circle
-class Circle {
-    constructor(x, y, radius, color, text, speed) {
-        this.posX = x;
-        this.posY = y;
-        this.radius = radius;
-        this.color = color;
-        this.originalColor = color; // Guardar color original
-        this.text = text;
-        this.speed = speed;
-        this.dx = (Math.random() < 0.5 ? -1 : 1) * this.speed;
-        this.dy = (Math.random() < 0.5 ? -1 : 1) * this.speed;
-        this.isFlashing = false; // Control de "flash" visual
+// === VARIABLES GLOBALES ===
+let zombies = [];
+let eliminados = 0;
+let horda = 1;
+let tiempo = 0;
+const maxZombies = 12;
+
+// === CLASE ZOMBIE ===
+class Zombie {
+    constructor(x, y, tipo, velocidadBase) {
+        this.x = x;
+        this.y = y;
+        this.tipo = tipo;
+        this.velocidad = velocidadBase + Math.random() * 1.5;
+        this.size = tipo === "mini" ? 20 : 35;
+        this.vidas = tipo === "fuerte" ? 2 : 1;
+        this.color = this.asignarColor();
     }
 
-    draw(context) {
-        context.beginPath();
-        context.strokeStyle = this.color;
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.font = "20px Arial";
-        context.fillText(this.text, this.posX, this.posY);
-        context.lineWidth = 2;
-        context.arc(this.posX, this.posY, this.radius, 0, Math.PI * 2, false);
-        context.stroke();
-        context.closePath();
-    }
-
-    update(context) {
-        this.posX += this.dx;
-        this.posY += this.dy;
-
-        // Rebote con los bordes del canvas
-        if (this.posX + this.radius > window_width || this.posX - this.radius < 0) {
-            this.dx = -this.dx;
+    asignarColor() {
+        switch (this.tipo) {
+            case "fuerte": return "#4b5320"; // verde oscuro
+            case "dividido": return "#7cc36f"; // verde claro
+            case "mini": return "#b6f29b";
+            default: return "#3e8e41"; // normal
         }
-        if (this.posY + this.radius > window_height || this.posY - this.radius < 0) {
-            this.dy = -this.dy;
+    }
+
+    draw(ctx) {
+        ctx.beginPath();
+        ctx.fillStyle = this.color;
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.closePath();
+
+        // ojos tipo caricatura
+        ctx.fillStyle = "white";
+        ctx.beginPath();
+        ctx.arc(this.x - this.size / 4, this.y - this.size / 4, this.size / 5, 0, Math.PI * 2);
+        ctx.arc(this.x + this.size / 4, this.y - this.size / 4, this.size / 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // pupilas
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        ctx.arc(this.x - this.size / 4, this.y - this.size / 4, this.size / 10, 0, Math.PI * 2);
+        ctx.arc(this.x + this.size / 4, this.y - this.size / 4, this.size / 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        // boca simple
+        ctx.beginPath();
+        ctx.moveTo(this.x - this.size / 3, this.y + this.size / 4);
+        ctx.lineTo(this.x + this.size / 3, this.y + this.size / 4);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    update() {
+        this.y += this.velocidad + horda * 0.2; // aumenta con la horda
+        if (this.y - this.size > canvas.height) {
+            // Reaparece arriba si cae fuera del lienzo
+            this.y = -this.size;
+            this.x = Math.random() * canvas.width;
         }
-
-        this.draw(context);
     }
 
-    // Detectar colisión entre círculos
-    detectCollision(otherCircle) {
-        let dx = this.posX - otherCircle.posX;
-        let dy = this.posY - otherCircle.posY;
-        let distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < this.radius + otherCircle.radius;
-    }
-
-    // Resolver colisión (rebote entre dos círculos)
-    resolveCollision(otherCircle) {
-        // Intercambiar direcciones (rebote simple)
-        let tempDx = this.dx;
-        let tempDy = this.dy;
-        this.dx = otherCircle.dx;
-        this.dy = otherCircle.dy;
-        otherCircle.dx = tempDx;
-        otherCircle.dy = tempDy;
-
-        // Llamar al "flash" visual
-        this.handleCollisionFlash();
-        otherCircle.handleCollisionFlash();
-    }
-
-    // Efecto de "flash" en color azul y regreso al color original
-    handleCollisionFlash() {
-        if (this.isFlashing) return; // Evita múltiples flashes simultáneos
-        this.isFlashing = true;
-        let original = this.color;
-        this.color = "#0000FF";
-        setTimeout(() => {
-            this.color = original;
-            this.isFlashing = false;
-        }, 150); // Duración breve del flash
+    clicDentro(x, y) {
+        let dx = this.x - x;
+        let dy = this.y - y;
+        return Math.sqrt(dx * dx + dy * dy) < this.size;
     }
 }
 
-// Crear un array para almacenar los círculos
-let circles = [];
-
-// Función para generar círculos aleatorios
-function generateCircles(n) {
-    for (let i = 0; i < n; i++) {
-        let radius = Math.random() * 30 + 20; // Radio entre 20 y 50
-        let x = Math.random() * (window_width - radius * 2) + radius;
-        let y = Math.random() * (window_height - radius * 2) + radius;
-        let color = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
-        let speed = Math.random() * 4 + 1; // Velocidad entre 1 y 5
-        let text = `C${i + 1}`;
-        circles.push(new Circle(x, y, radius, color, text, speed));
-    }
+// === FUNCIÓN PARA GENERAR ZOMBIES ===
+function generarZombie() {
+    const tipos = ["normal", "fuerte", "dividido"];
+    const tipo = tipos[Math.floor(Math.random() * tipos.length)];
+    const x = Math.random() * canvas.width;
+    const y = Math.random() * -200; // para que salgan de arriba
+    const velocidad = 1 + Math.random() * 2;
+    zombies.push(new Zombie(x, y, tipo, velocidad));
 }
 
-// Animación principal
-function animate() {
-    ctx.clearRect(0, 0, window_width, window_height);
+// === CONTROL DE CLICS ===
+canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
-    // Detectar y manejar colisiones entre círculos
-    for (let i = 0; i < circles.length; i++) {
-        for (let j = i + 1; j < circles.length; j++) {
-            let circleA = circles[i];
-            let circleB = circles[j];
+    for (let i = zombies.length - 1; i >= 0; i--) {
+        let z = zombies[i];
+        if (z.clicDentro(mouseX, mouseY)) {
+            z.vidas--;
+            if (z.vidas <= 0) {
+                eliminados++;
 
-            if (circleA.detectCollision(circleB)) {
-                circleA.resolveCollision(circleB);
+                // Si es zombie dividido, genera dos mini-zombies
+                if (z.tipo === "dividido") {
+                    for (let k = 0; k < 2; k++) {
+                        zombies.push(new Zombie(z.x + (Math.random() * 30 - 15), z.y, "mini", 2));
+                    }
+                }
+
+                zombies.splice(i, 1);
+                generarZombie(); // mantener cantidad constante
             }
+            break;
         }
     }
+});
 
-    // Actualizar y dibujar círculos
-    circles.forEach(circle => circle.update(ctx));
+// === ANIMACIÓN PRINCIPAL ===
+function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    zombies.forEach(z => {
+        z.update();
+        z.draw(ctx);
+    });
+
+    // HUD - Contador
+    ctx.fillStyle = "#000";
+    ctx.font = "20px Arial";
+    ctx.textAlign = "right";
+    ctx.fillText(`💀 Eliminados: ${eliminados}`, canvas.width - 20, 30);
+    ctx.fillText(`Horda: ${horda}`, canvas.width - 20, 60);
+
+    // Cada 10 segundos aumenta la horda
+    tiempo += 1;
+    if (tiempo % (60 * 10) === 0) {
+        horda++;
+    }
 
     requestAnimationFrame(animate);
 }
 
-// Generar 20 círculos y comenzar animación
-generateCircles(20);
+// === INICIALIZACIÓN ===
+for (let i = 0; i < maxZombies; i++) {
+    generarZombie();
+}
 animate();
